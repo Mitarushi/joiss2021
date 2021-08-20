@@ -13,7 +13,7 @@ find_package(OpenCV REQUIRED)
 include_directories("${OpenCV_INCLUDE_DIRS}")
 
 # add_executable(joiss2021 main.cu)
-add_executable(joiss2021 main2.cu)
+add_executable(joiss2021 main.cu)
 
 # linking
 target_link_libraries(joiss2021 ${OpenCV_LIBS})
