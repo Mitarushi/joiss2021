@@ -21,8 +21,8 @@ mandelbrot(unsigned char *count,
 
     const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
 
-    const num c_x = ((num) x_idx / (num) IMAGE_SIZE_Y - 0.5f) * point_size + point_x;
-    const num c_y = ((num) y_idx / (num) IMAGE_SIZE_Y - 0.5f) * point_size + point_y;
+    const num c_x = (num) x_idx / (num) IMAGE_SIZE_Y * point_size + point_x;
+    const num c_y = (num) y_idx / (num) IMAGE_SIZE_Y * point_size + point_y;
     num z_x = 0, z_y = 0;
 
     for (int i = 0; i < MAX_ITER; i++) {
@@ -56,8 +56,8 @@ void array_to_image(const unsigned char *count, cv::Mat &image) {
     }
 }
 
-num point_x = 0;
-num point_y = 0;
+num point_x = -2.0;
+num point_y = -2.0;
 num point_size = 4.0;
 int mouse_prev_x = 0, mouse_prev_y = 0;
 bool mouse_flag = false,
@@ -65,11 +65,17 @@ bool mouse_flag = false,
 
 void mouse_callback(int event, int x, int y, int flags, void *userdata) {
     if (event == cv::EVENT_MOUSEWHEEL) {
+        constexpr num zoom_scale = 0.9;
+        num pixel = point_size / IMAGE_SIZE_Y;
         if (cv::getMouseWheelDelta(flags) > 0) {
-            point_size *= 0.9;
+            point_y += (num) x * pixel * (1 - zoom_scale);
+            point_x += (num) y * pixel * (1 - zoom_scale);
+            point_size *= zoom_scale;
         }
         if (cv::getMouseWheelDelta(flags) < 0) {
-            point_size /= 0.9;
+            point_y += (num) x * pixel * (1 - 1 / zoom_scale);
+            point_x += (num) y * pixel * (1 - 1 / zoom_scale);
+            point_size /= zoom_scale;
         }
     }
 
@@ -126,8 +132,8 @@ int main() {
         array_to_image(count, image);
 
         now_time = std::chrono::system_clock::now();
-        auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time);
-        double fps = 1000.0 / (double) process_time.count();
+        auto process_time = std::chrono::duration_cast<std::chrono::microseconds>(now_time - prev_time);
+        double fps = 1000000.0 / (double) process_time.count();
         if (show_fps) {
             cv::putText(image,
                         format("FPS: %.3f", fps),
