@@ -28,7 +28,7 @@ mandelbrot(unsigned char *count,
         z_y = prev_z_x * z_y * 2 + c_y;
 
         if (z_x * z_x + z_y * z_y > 4) {
-            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0 * 256.0);
+            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
             return;
         }
     }
