@@ -138,7 +138,7 @@ int main() {
         prev_time = now_time;
 
         cv::imshow("image", image);
-        int key = cv::waitKey(10);
+        int key = cv::waitKey(3);
 
         if (key == 'q') {
             break;
