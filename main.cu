@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstdio>
+#include <cassert>
 
 using num = float;
 constexpr unsigned int
@@ -10,7 +11,11 @@ constexpr unsigned int
         IMAGE_SIZE_Y = 2560;
 constexpr unsigned int MAX_ITER = 65536;
 constexpr unsigned int BLOCK_SIZE = 512;
-constexpr unsigned int IMAGE_GRID_SIZE = 33;
+constexpr unsigned int IMAGE_GRID_SIZE = 65;
+constexpr unsigned int
+        GRID_IMAGE_SIZE_X = (IMAGE_SIZE_X + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE,
+        GRID_IMAGE_SIZE_Y = (IMAGE_SIZE_Y + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE;
+constexpr unsigned int GRID_X_PAR_BLOCK = BLOCK_SIZE / GRID_IMAGE_SIZE_Y;
 
 __device__ void inline
 eval_point(unsigned char *count,
@@ -50,10 +55,15 @@ fill_x_grid(unsigned char *count,
 __global__ void
 fill_y_grid(unsigned char *count,
             const num point_x, const num point_y, const num point_size) {
-    const unsigned int x_idx = blockIdx.x;
-    const unsigned int y_idx = (blockIdx.y * blockDim.x + threadIdx.x) * IMAGE_GRID_SIZE;
+    const unsigned int x_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int y_idx = threadIdx.y * IMAGE_GRID_SIZE;
     eval_point(count, point_x, point_y, point_size, x_idx, y_idx);
 }
+//
+//__global__ void
+//check_all_black(unsigned char *count,unsigned char *ok){
+//
+//}
 
 __global__ void
 mandelbrot(unsigned char *count,
@@ -134,12 +144,11 @@ std::string format(const std::string &fmt, Args ... args) {
 int main() {
     dim3 main_grid(IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
     dim3 main_block(BLOCK_SIZE);
-    dim3 x_grid((IMAGE_SIZE_X + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE,
-                (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 x_grid(GRID_IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
     dim3 x_block(BLOCK_SIZE);
-    dim3 y_grid(IMAGE_SIZE_X,
-                (IMAGE_SIZE_Y + BLOCK_SIZE * IMAGE_GRID_SIZE - 1) / (BLOCK_SIZE * IMAGE_GRID_SIZE));
-    dim3 y_block(BLOCK_SIZE);
+    assert(GRID_IMAGE_SIZE_Y < BLOCK_SIZE);
+    dim3 y_grid((IMAGE_SIZE_X + GRID_X_PAR_BLOCK - 1) / GRID_X_PAR_BLOCK);
+    dim3 y_block(GRID_X_PAR_BLOCK, GRID_IMAGE_SIZE_Y);
 
     unsigned int n_bytes = IMAGE_SIZE_X * IMAGE_SIZE_Y * sizeof(unsigned char);
 
