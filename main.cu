@@ -128,13 +128,15 @@ int main() {
         now_time = std::chrono::system_clock::now();
         auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time);
         double fps = 1000.0 / (double) process_time.count();
-        cv::putText(image,
-                    format("FPS: %.3f", fps),
-                    cv::Point(0, 20),
-                    cv::FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    cv::Scalar(255, 255, 255),
-                    1);
+        if (show_fps) {
+            cv::putText(image,
+                        format("FPS: %.3f", fps),
+                        cv::Point(0, 20),
+                        cv::FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        cv::Scalar(255, 255, 255),
+                        1);
+        }
         prev_time = now_time;
 
         cv::imshow("image", image);
