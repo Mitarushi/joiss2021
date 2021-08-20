@@ -2,23 +2,27 @@
 #include <opencv2/opencv.hpp>
 
 using num = float;
+constexpr unsigned int
+        IMAGE_SIZE_X = 1440,
+        IMAGE_SIZE_Y = 2560;
+constexpr unsigned int MAX_ITER = 65536;
+constexpr unsigned int BLOCK_SIZE = 256;
+
 
 __global__ void
-mandelbrot(unsigned char *count, const unsigned int image_size_x, const unsigned int image_size_y,
-           const unsigned int max_iter,
+mandelbrot(unsigned char *count,
            const num point_x, const num point_y, const num point_size) {
     const unsigned int x_idx = blockIdx.x;
     const unsigned int y_idx = blockIdx.y * blockDim.x + threadIdx.x;
-    if (!(x_idx < image_size_x && y_idx < image_size_y)) return;
+    if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
 
-    const unsigned int idx = x_idx * image_size_y + y_idx;
+    const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
 
-
-    const num c_x = ((num) x_idx / (num) image_size_y - 0.5f) * point_size + point_x;
-    const num c_y = ((num) y_idx / (num) image_size_y - 0.5f) * point_size + point_y;
+    const num c_x = ((num) x_idx / (num) IMAGE_SIZE_Y - 0.5f) * point_size + point_x;
+    const num c_y = ((num) y_idx / (num) IMAGE_SIZE_Y - 0.5f) * point_size + point_y;
     num z_x = 0, z_y = 0;
 
-    for (int i = 0; i < max_iter; i++) {
+    for (int i = 0; i < MAX_ITER; i++) {
         const num prev_z_x = z_x;
 
         z_x = z_x * z_x - z_y * z_y + c_x;
@@ -33,12 +37,11 @@ mandelbrot(unsigned char *count, const unsigned int image_size_x, const unsigned
     count[idx] = 255;
 }
 
-void array_to_image(const unsigned char *count, cv::Mat &image,
-                    const unsigned int image_size_x, const unsigned int image_size_y) {
-    for (int i = 0; i < image_size_x; i++) {
+void array_to_image(const unsigned char *count, cv::Mat &image) {
+    for (int i = 0; i < IMAGE_SIZE_X; i++) {
         auto *src = image.ptr<cv::Vec3b>(i);
-        for (int j = 0; j < image_size_y; j++) {
-            const unsigned char cnt = count[i * image_size_y + j];
+        for (int j = 0; j < IMAGE_SIZE_Y; j++) {
+            const unsigned char cnt = count[i * IMAGE_SIZE_Y + j];
             if (cnt == 255) {
                 src[j][0] = src[j][1] = src[j][2] = 0;
             } else {
@@ -50,16 +53,13 @@ void array_to_image(const unsigned char *count, cv::Mat &image,
     }
 }
 
-const unsigned int
-        image_size_x = 1440,
-        image_size_y = 2560;
 num point_x = 0;
 num point_y = 0;
 num point_size = 4.0;
 int mouse_prev_x = 0, mouse_prev_y = 0;
 bool mouse_flag = false;
 
-void change_point_size(int event, int x, int y, int flags, void *userdata) {
+void mouse_callback(int event, int x, int y, int flags, void *userdata) {
     if (event == cv::EVENT_MOUSEWHEEL) {
         if (cv::getMouseWheelDelta(flags) > 0) {
             point_size *= 0.9;
@@ -74,7 +74,7 @@ void change_point_size(int event, int x, int y, int flags, void *userdata) {
         mouse_prev_y = y;
     }
     if (mouse_flag && event == cv::EVENT_MOUSEMOVE) {
-        num pixel = point_size / image_size_y;
+        num pixel = point_size / IMAGE_SIZE_Y;
         point_y -= num(x - mouse_prev_x) * pixel;
         point_x -= num(y - mouse_prev_y) * pixel;
         mouse_prev_x = x;
@@ -86,31 +86,24 @@ void change_point_size(int event, int x, int y, int flags, void *userdata) {
 }
 
 int main() {
-
-    const unsigned int max_iter = 65536;
-
-    const unsigned int block_size = 256;
-
-    dim3 grid(image_size_x, (image_size_y + block_size - 1) / block_size);
-    dim3 block(block_size);
-
-    unsigned int n_bytes = image_size_x * image_size_y * sizeof(unsigned char);
+    dim3 grid(IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 block(BLOCK_SIZE);
+    unsigned int n_bytes = IMAGE_SIZE_X * IMAGE_SIZE_Y * sizeof(unsigned char);
 
     unsigned char *count, *count_gpu;
     count = (unsigned char *) malloc(n_bytes);
     cudaMalloc((unsigned char **) &count_gpu, n_bytes);
 
-    cv::Mat image = cv::Mat::zeros(image_size_x, image_size_y, CV_8UC3);
+    cv::Mat image = cv::Mat::zeros(IMAGE_SIZE_X, IMAGE_SIZE_Y, CV_8UC3);
 
     cv::namedWindow("image");
 
-    cv::setMouseCallback("image", change_point_size);
+    cv::setMouseCallback("image", mouse_callback);
 
     while (true) {
-        mandelbrot<<<grid, block>>>(count_gpu, image_size_x, image_size_y, max_iter,
-                                    point_x, point_y, point_size);
+        mandelbrot<<<grid, block>>>(count_gpu, point_x, point_y, point_size);
         cudaMemcpy(count, count_gpu, n_bytes, cudaMemcpyDeviceToHost);
-        array_to_image(count, image, image_size_x, image_size_y);
+        array_to_image(count, image);
 
         cv::imshow("image", image);
         int key = cv::waitKey(10);
