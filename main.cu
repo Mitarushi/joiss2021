@@ -9,14 +9,13 @@ constexpr unsigned int
         IMAGE_SIZE_X = 1440,
         IMAGE_SIZE_Y = 2560;
 constexpr unsigned int MAX_ITER = 65536;
-constexpr unsigned int BLOCK_SIZE = 256;
+constexpr unsigned int BLOCK_SIZE = 512;
+constexpr unsigned int IMAGE_GRID_SIZE = 33;
 
-
-__global__ void
-mandelbrot(unsigned char *count,
-           const num point_x, const num point_y, const num point_size) {
-    const unsigned int x_idx = blockIdx.x;
-    const unsigned int y_idx = blockIdx.y * blockDim.x + threadIdx.x;
+__device__ void inline
+eval_point(unsigned char *count,
+           const num point_x, const num point_y, const num point_size,
+           const unsigned int x_idx, const unsigned int y_idx) {
     if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
 
     const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
@@ -38,6 +37,30 @@ mandelbrot(unsigned char *count,
     }
 
     count[idx] = 255;
+}
+
+__global__ void
+fill_x_grid(unsigned char *count,
+            const num point_x, const num point_y, const num point_size) {
+    const unsigned int x_idx = blockIdx.x * IMAGE_GRID_SIZE;
+    const unsigned int y_idx = blockIdx.y * blockDim.x + threadIdx.x;
+    eval_point(count, point_x, point_y, point_size, x_idx, y_idx);
+}
+
+__global__ void
+fill_y_grid(unsigned char *count,
+            const num point_x, const num point_y, const num point_size) {
+    const unsigned int x_idx = blockIdx.x;
+    const unsigned int y_idx = (blockIdx.y * blockDim.x + threadIdx.x) * IMAGE_GRID_SIZE;
+    eval_point(count, point_x, point_y, point_size, x_idx, y_idx);
+}
+
+__global__ void
+mandelbrot(unsigned char *count,
+           const num point_x, const num point_y, const num point_size) {
+    const unsigned int x_idx = blockIdx.x;
+    const unsigned int y_idx = blockIdx.y * blockDim.x + threadIdx.x;
+    eval_point(count, point_x, point_y, point_size, x_idx, y_idx);
 }
 
 void array_to_image(const unsigned char *count, cv::Mat &image) {
@@ -109,8 +132,15 @@ std::string format(const std::string &fmt, Args ... args) {
 }
 
 int main() {
-    dim3 grid(IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    dim3 block(BLOCK_SIZE);
+    dim3 main_grid(IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 main_block(BLOCK_SIZE);
+    dim3 x_grid((IMAGE_SIZE_X + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE,
+                (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 x_block(BLOCK_SIZE);
+    dim3 y_grid(IMAGE_SIZE_X,
+                (IMAGE_SIZE_Y + BLOCK_SIZE * IMAGE_GRID_SIZE - 1) / (BLOCK_SIZE * IMAGE_GRID_SIZE));
+    dim3 y_block(BLOCK_SIZE);
+
     unsigned int n_bytes = IMAGE_SIZE_X * IMAGE_SIZE_Y * sizeof(unsigned char);
 
     unsigned char *count, *count_gpu;
@@ -118,16 +148,17 @@ int main() {
     cudaMalloc((unsigned char **) &count_gpu, n_bytes);
 
     cv::Mat image = cv::Mat::zeros(IMAGE_SIZE_X, IMAGE_SIZE_Y, CV_8UC3);
-
     cv::namedWindow("image");
-
     cv::setMouseCallback("image", mouse_callback);
 
     std::chrono::system_clock::time_point prev_time, now_time;
     prev_time = std::chrono::system_clock::now();
 
     while (true) {
-        mandelbrot<<<grid, block>>>(count_gpu, point_x, point_y, point_size);
+        fill_x_grid<<<x_grid, x_block>>>(count_gpu, point_x, point_y, point_size);
+        fill_y_grid<<<y_grid, y_block>>>(count_gpu, point_x, point_y, point_size);
+
+        // mandelbrot<<<main_grid, main_block>>>(count_gpu, point_x, point_y, point_size);
         cudaMemcpy(count, count_gpu, n_bytes, cudaMemcpyDeviceToHost);
         array_to_image(count, image);
 
@@ -146,8 +177,8 @@ int main() {
         prev_time = now_time;
 
         cv::imshow("image", image);
-        int key = cv::waitKey(3);
 
+        int key = cv::waitKey(3);
         if (key == 'q') {
             break;
         }
