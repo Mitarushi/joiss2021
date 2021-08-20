@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(joiss2021 CUDA)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CUDA_STANDARD 20)
-set(CMAKE_CXX_FLAGS -arch=sm_75 -std=c++20 -Wall -O2)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CUDA_STANDARD 23)
+set(CMAKE_CXX_FLAGS -arch=sm_75 -std=c++23 -Wall -O2)
 
 # Where to find CMake modules and OpenCV
 set(OpenCV_DIR "C:/UserProgramFiles/opencv/build")

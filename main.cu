@@ -1,4 +1,8 @@
 #include <opencv2/opencv.hpp>
+#include <chrono>
+#include <string>
+#include <vector>
+#include <cstdio>
 
 using num = float;
 constexpr unsigned int
@@ -56,7 +60,8 @@ num point_x = 0;
 num point_y = 0;
 num point_size = 4.0;
 int mouse_prev_x = 0, mouse_prev_y = 0;
-bool mouse_flag = false;
+bool mouse_flag = false,
+        show_fps = true;
 
 void mouse_callback(int event, int x, int y, int flags, void *userdata) {
     if (event == cv::EVENT_MOUSEWHEEL) {
@@ -67,6 +72,7 @@ void mouse_callback(int event, int x, int y, int flags, void *userdata) {
             point_size /= 0.9;
         }
     }
+
     if (event == cv::EVENT_LBUTTONDOWN) {
         mouse_flag = true;
         mouse_prev_x = x;
@@ -82,6 +88,18 @@ void mouse_callback(int event, int x, int y, int flags, void *userdata) {
     if (event == cv::EVENT_LBUTTONUP) {
         mouse_flag = false;
     }
+
+    if (event == cv::EVENT_RBUTTONDOWN) {
+        show_fps ^= true;
+    }
+}
+
+template<typename ... Args>
+std::string format(const std::string &fmt, Args ... args) {
+    size_t len = std::snprintf(nullptr, 0, fmt.c_str(), args ...);
+    std::vector<char> buf(len + 1);
+    std::snprintf(&buf[0], len + 1, fmt.c_str(), args ...);
+    return std::string(&buf[0], &buf[0] + len);
 }
 
 int main() {
@@ -99,10 +117,25 @@ int main() {
 
     cv::setMouseCallback("image", mouse_callback);
 
+    std::chrono::system_clock::time_point prev_time, now_time;
+    prev_time = std::chrono::system_clock::now();
+
     while (true) {
         mandelbrot<<<grid, block>>>(count_gpu, point_x, point_y, point_size);
         cudaMemcpy(count, count_gpu, n_bytes, cudaMemcpyDeviceToHost);
         array_to_image(count, image);
+
+        now_time = std::chrono::system_clock::now();
+        auto process_time = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - prev_time);
+        double fps = 1000.0 / (double) process_time.count();
+        cv::putText(image,
+                    format("FPS: %.3f", fps),
+                    cv::Point(0, 20),
+                    cv::FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    cv::Scalar(255, 255, 255),
+                    1);
+        prev_time = now_time;
 
         cv::imshow("image", image);
         int key = cv::waitKey(10);
