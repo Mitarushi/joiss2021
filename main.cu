@@ -504,6 +504,7 @@ int main() {
 
     cv::Mat image = cv::Mat::zeros(IMAGE_SIZE_X, IMAGE_SIZE_Y, CV_8UC3);
     cv::namedWindow("image");
+    cv::setWindowProperty("image", cv::WND_PROP_FULLSCREEN, cv::WINDOW_FULLSCREEN);
     cv::setMouseCallback("image", mouse_callback);
 
     std::chrono::system_clock::time_point prev_time, now_time;
@@ -546,6 +547,8 @@ int main() {
         int key = cv::waitKey(3);
         if (key == 'q') {
             break;
+        } else if (key == 'p') {
+            cv::imwrite("./image.png", image);
         }
     }
 
