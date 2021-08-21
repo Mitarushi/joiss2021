@@ -15,6 +15,11 @@ constexpr unsigned int BLOCK_SIZE = 512;
 constexpr unsigned int GRID_LEVEL_NUM = 5;
 constexpr unsigned int GRID_SIZE_ARRAY[GRID_LEVEL_NUM] = {256, 128, 64, 32, 16};
 constexpr unsigned int GRID_SIZE_SCALE = 2;
+
+constexpr unsigned int MIN_GRID_SIZE = GRID_SIZE_ARRAY[GRID_LEVEL_NUM - 1];
+constexpr unsigned int
+        NON_GRID_IMAGE_SIZE_X = IMAGE_SIZE_X - (IMAGE_SIZE_X + MIN_GRID_SIZE - 1) / MIN_GRID_SIZE,
+        NON_GRID_IMAGE_SIZE_Y = IMAGE_SIZE_Y - (IMAGE_SIZE_Y + MIN_GRID_SIZE - 1) / MIN_GRID_SIZE;
 //constexpr unsigned int IMAGE_GRID_SIZE = 159;
 //
 //constexpr unsigned int
@@ -208,46 +213,6 @@ check_all_black(const unsigned char *count, const bool *prev_all_black, bool *al
     all_black[grid_idx] = all;
 }
 
-//__global__ void
-//mandelbrot(unsigned char *count, const bool *all_black,
-//           const num point_x, const num point_y, const num point_size) {
-//    const unsigned int
-//            non_grid_x_idx = blockIdx.x,
-//            non_grid_y_idx = blockIdx.y * blockDim.x + threadIdx.x;
-//    const unsigned int
-//            grid_idx_x = non_grid_x_idx / (IMAGE_GRID_SIZE - 1),
-//            grid_idx_y = non_grid_y_idx / (IMAGE_GRID_SIZE - 1);
-//    const unsigned int grid_idx = grid_idx_x * GRID_IMAGE_SIZE_Y + grid_idx_y;
-//    const unsigned int
-//            x_idx = non_grid_x_idx + grid_idx_x + 1,
-//            y_idx = non_grid_y_idx + grid_idx_y + 1;
-//    if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
-//    const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
-//
-//    if (all_black[grid_idx]) {
-//        count[idx] = 0;
-//        return;
-//    }
-//    eval_point(count, point_x, point_y, point_size,
-//               x_idx, y_idx);
-//}
-
-void array_to_image(const unsigned char *count, cv::Mat &image) {
-    for (int i = 0; i < IMAGE_SIZE_X; i++) {
-        auto *src = image.ptr<cv::Vec3b>(i);
-        for (int j = 0; j < IMAGE_SIZE_Y; j++) {
-            const unsigned char cnt = count[i * IMAGE_SIZE_Y + j];
-            if (cnt == 255) {
-                src[j][0] = src[j][1] = src[j][2] = 0;
-            } else {
-                src[j][0] = (255 - cnt) / 2;
-                src[j][1] = cnt;
-                src[j][2] = cnt;
-            }
-        }
-    }
-}
-
 template<unsigned int IMAGE_GRID_SIZE>
 void check_first_grid(unsigned char *count_gpu, bool *all_black,
                       const num point_x, const num point_y, const num point_size) {
@@ -327,6 +292,66 @@ void check_next_grid(unsigned char *count_gpu, const bool *prev_all_black, bool 
     cudaDeviceSynchronize();
 }
 
+template<unsigned int IMAGE_GRID_SIZE>
+__global__ void
+fill_not_black(unsigned char *count, const bool *all_black,
+               const num point_x, const num point_y, const num point_size) {
+    constexpr unsigned int GRID_IMAGE_SIZE_Y = (IMAGE_SIZE_Y + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE;
+    const unsigned int
+            non_grid_x_idx = blockIdx.x,
+            non_grid_y_idx = blockIdx.y * blockDim.x + threadIdx.x;
+    const unsigned int
+            grid_idx_x = non_grid_x_idx / (IMAGE_GRID_SIZE - 1),
+            grid_idx_y = non_grid_y_idx / (IMAGE_GRID_SIZE - 1);
+    const unsigned int grid_idx = grid_idx_x * GRID_IMAGE_SIZE_Y + grid_idx_y;
+    const unsigned int
+            x_idx = non_grid_x_idx + grid_idx_x + 1,
+            y_idx = non_grid_y_idx + grid_idx_y + 1;
+    if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
+
+    if (all_black[grid_idx]) {
+        return;
+    }
+    eval_point(count, point_x, point_y, point_size,
+               x_idx, y_idx);
+}
+
+template<unsigned int IMAGE_GRID_SIZE>
+__global__ void
+fill_black(unsigned char *count, const bool *all_black) {
+    constexpr unsigned int GRID_IMAGE_SIZE_Y = (IMAGE_SIZE_Y + IMAGE_GRID_SIZE - 1) / IMAGE_GRID_SIZE;
+    const unsigned int
+            x_idx = blockIdx.x,
+            y_idx = blockIdx.y * blockDim.x + threadIdx.x;
+    const unsigned int
+            grid_idx_x = x_idx / IMAGE_GRID_SIZE,
+            grid_idx_y = y_idx / IMAGE_GRID_SIZE;
+    const unsigned int grid_idx = grid_idx_x * GRID_IMAGE_SIZE_Y + grid_idx_y;
+    if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
+
+    const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
+
+    if (all_black[grid_idx]) {
+        count[idx] = 255;
+    }
+}
+
+void array_to_image(const unsigned char *count, cv::Mat &image) {
+    for (int i = 0; i < IMAGE_SIZE_X; i++) {
+        auto *src = image.ptr<cv::Vec3b>(i);
+        for (int j = 0; j < IMAGE_SIZE_Y; j++) {
+            const unsigned char cnt = count[i * IMAGE_SIZE_Y + j];
+            if (cnt == 255) {
+                src[j][0] = src[j][1] = src[j][2] = 0;
+            } else {
+                src[j][0] = (255 - cnt) / 2;
+                src[j][1] = cnt;
+                src[j][2] = cnt;
+            }
+        }
+    }
+}
+
 num point_x = -0.647;
 num point_y = 0.364;
 num point_size = 0.066;
@@ -381,8 +406,10 @@ std::string format(const std::string &fmt, Args ... args) {
 
 
 int main() {
-    //    dim3 main_grid(NON_GRID_IMAGE_SIZE_X, (NON_GRID_IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    //    dim3 main_block(BLOCK_SIZE);
+    dim3 main_grid(NON_GRID_IMAGE_SIZE_X, (NON_GRID_IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 main_block(BLOCK_SIZE);
+    dim3 black_grid(IMAGE_SIZE_X, (IMAGE_SIZE_Y + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 black_block(BLOCK_SIZE);
     unsigned int n_bytes = IMAGE_SIZE_X * IMAGE_SIZE_Y * sizeof(unsigned char);
 
 
@@ -418,16 +445,10 @@ int main() {
                                             point_x, point_y, point_size);
         check_next_grid<GRID_SIZE_ARRAY[4]>(count_gpu, all_black[3], all_black[4],
                                             point_x, point_y, point_size);
-//        check_next_grid<GRID_SIZE_ARRAY[5]>(count_gpu, all_black[4], all_black[5],
-//                                            point_x, point_y, point_size);
 
-        //        fill_x_grid<<<x_grid, x_block>>>(count_gpu, point_x, point_y, point_size);
-        //        fill_y_grid<<<y_grid, y_block>>>(count_gpu, point_x, point_y, point_size);
-        //        cudaDeviceSynchronize();
-        //        check_all_black<<<check_grid, check_block>>>(count_gpu, all_black);
-        cudaDeviceSynchronize();
-
-        //        mandelbrot<<<main_grid, main_block>>>(count_gpu, all_black, point_x, point_y, point_size);
+        fill_not_black<MIN_GRID_SIZE><<<main_grid, main_block>>>(count_gpu, all_black[GRID_LEVEL_NUM - 1],
+                                                                 point_x, point_y, point_size);
+        fill_black<MIN_GRID_SIZE><<<black_grid, black_block>>>(count_gpu, all_black[GRID_LEVEL_NUM - 1]);
         cudaMemcpy(count, count_gpu, n_bytes, cudaMemcpyDeviceToHost);
         array_to_image(count, image);
 
