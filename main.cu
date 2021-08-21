@@ -34,6 +34,12 @@ __device__ void inline
 eval_point(unsigned char *count,
            const num point_x, const num point_y, const num point_size,
            const unsigned int x_idx, const unsigned int y_idx) {
+    constexpr unsigned int
+            LOOP_SEP1 = 96,
+            LOOP_SEP2 = 192,
+            LOOP_SEP3 = 384,
+            LOOP_SEP4 = 768;
+
     if (!(x_idx < IMAGE_SIZE_X && y_idx < IMAGE_SIZE_Y)) return;
 
     const unsigned int idx = x_idx * IMAGE_SIZE_Y + y_idx;
@@ -42,14 +48,83 @@ eval_point(unsigned char *count,
     const num c_y = (num) y_idx / (num) IMAGE_SIZE_Y * point_size + point_y;
     num z_x = 0, z_y = 0;
 
-    // #pragma unroll
-    for (int i = 0; i < MAX_ITER; i++) {
+
+#pragma unroll
+    for (int i = 0; i < LOOP_SEP1; i++) {
         const num prev_z_x = z_x;
 
         z_x = z_x * z_x - z_y * z_y + c_x;
         z_y = prev_z_x * z_y * 2 + c_y;
 
         if (z_x * z_x + z_y * z_y > 4) {
+            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
+            return;
+        }
+    }
+
+#pragma unroll
+    for (int i = LOOP_SEP1; i < LOOP_SEP2; i += 4) {
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            const num prev_z_x = z_x;
+
+            z_x = z_x * z_x - z_y * z_y + c_x;
+            z_y = prev_z_x * z_y * 2 + c_y;
+        }
+
+        const num r2 = z_x * z_x + z_y * z_y;
+        if (r2 > 4 || isnan(r2)) {
+            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
+            return;
+        }
+    }
+
+#pragma unroll
+    for (int i = LOOP_SEP2; i < LOOP_SEP3; i += 8) {
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            const num prev_z_x = z_x;
+
+            z_x = z_x * z_x - z_y * z_y + c_x;
+            z_y = prev_z_x * z_y * 2 + c_y;
+        }
+
+        const num r2 = z_x * z_x + z_y * z_y;
+        if (r2 > 4 || isnan(r2)) {
+            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
+            return;
+        }
+    }
+
+#pragma unroll
+    for (int i = LOOP_SEP3; i < LOOP_SEP4; i += 16) {
+#pragma unroll
+        for (int j = 0; j < 16; j++) {
+            const num prev_z_x = z_x;
+
+            z_x = z_x * z_x - z_y * z_y + c_x;
+            z_y = prev_z_x * z_y * 2 + c_y;
+        }
+
+        const num r2 = z_x * z_x + z_y * z_y;
+        if (r2 > 4 || isnan(r2)) {
+            count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
+            return;
+        }
+    }
+
+#pragma unroll
+    for (int i = LOOP_SEP4; i < MAX_ITER; i += 32) {
+#pragma unroll
+        for (int j = 0; j < 32; j++) {
+            const num prev_z_x = z_x;
+
+            z_x = z_x * z_x - z_y * z_y + c_x;
+            z_y = prev_z_x * z_y * 2 + c_y;
+        }
+
+        const num r2 = z_x * z_x + z_y * z_y;
+        if (r2 > 4 || isnan(r2)) {
             count[idx] = (unsigned char) (log2((num) i + 1) / 16.0f * 256.0f);
             return;
         }
