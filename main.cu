@@ -427,9 +427,9 @@ void array_to_image(const unsigned char *count, cv::Mat &image) {
     }
 }
 
-num point_x = -0.647;
-num point_y = 0.364;
-num point_size = 0.066;
+num point_x = -2.0;
+num point_y = -2.0;
+num point_size = 4.0;
 int mouse_prev_x = 0, mouse_prev_y = 0;
 bool mouse_flag = false,
         show_fps = true;
